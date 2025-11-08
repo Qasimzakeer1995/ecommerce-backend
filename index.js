@@ -138,5 +138,12 @@ function verifyToken(req, resp, next){
   }
 }
 
+app.get("/", async (req, res) => {
+    console.log("Received a request at /"); // prints in container logs
+    res.send("Hello! The app is running 🚀"); // visible in browser
+});
+  
+  
+
 app.listen(5000);
 
