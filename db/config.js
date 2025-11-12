@@ -1,7 +1,7 @@
 // ...existing code...
 const mongoose = require('mongoose');
 
-const mongoUrl = process.env.MONGO_URL || 'mongodb://mongo:27017/e-comm';
+const mongoUrl = process.env.MONGO_URL;
 const maxRetries = 10;
 let attempt = 0;
 
@@ -27,4 +27,3 @@ function connectWithRetry() {
 }
 
 connectWithRetry();
-// ...existing code...
