@@ -83,13 +83,7 @@ jobs:
 
             cd "$DEPLOY_DIR"
 
-            # write/overwrite .env (MongoDB removed)
-            cat > .env <<EOF
-PORT=${PORT}
-BASE_URL=${BASE_URL}
-# MongoDB removed intentionally
-EOF
-            echo ".env written"
+           
 
             # select docker compose command
             if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
