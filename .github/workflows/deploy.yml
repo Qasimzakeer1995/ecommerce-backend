@@ -43,23 +43,60 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to EC2 with Docker
+      - name: Deploy to EC2 with Docker Compose (safe)
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            cd /home/${{ secrets.EC2_USER }}/ecommerce-backend
-            
-            # Pull latest code
-            git pull origin main
-            
-            # Stop running containers
-            docker-compose down || true
-            
-            # Start with Docker Compose
-            docker-compose up -d
-            
-            echo "✅ Application deployed with Docker!"
-            docker-compose ps
+            set -euo pipefail
+
+            REPO="https://github.com/${{ github.repository }}.git"
+            DEPLOY_DIR="/home/${{ secrets.EC2_USER }}/ecommerce-backend"
+            BRANCH="main"
+
+            # Ensure git is installed
+            if ! command -v git >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y git
+            fi
+
+            # Clone if missing, otherwise fetch and reset to remote branch
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              echo "Cloning repo into $DEPLOY_DIR"
+              rm -rf "$DEPLOY_DIR"
+              git clone --depth=1 --branch "$BRANCH" "$REPO" "$DEPLOY_DIR"
+            else
+              echo "Updating existing repo at $DEPLOY_DIR"
+              cd "$DEPLOY_DIR"
+              git fetch origin "$BRANCH"
+              git reset --hard "origin/$BRANCH"
+            fi
+
+            cd "$DEPLOY_DIR"
+
+            # Ensure .env exists (optional: set secret values in GitHub Secrets and write here)
+            if [ ! -f .env ]; then
+              cat > .env <<EOF
+MONGO_URL=${{ secrets.MONGO_URL || 'mongodb://mongo:27017/e-comm' }}
+PORT=${{ secrets.PORT || '5000' }}
+BASE_URL=${{ secrets.BASE_URL || 'http://localhost:5000' }}
+EOF
+              echo ".env created"
+            fi
+
+            # Try docker compose (plugin) then fallback to docker-compose
+            if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+              DC="docker compose"
+            else
+              DC="docker-compose"
+            fi
+
+            # Pull/build and restart
+            $DC pull --ignore-pull-failures || true
+            $DC down --remove-orphans || true
+            $DC up -d --build
+
+            echo "✅ Deployed via $DC"
+            $DC ps
