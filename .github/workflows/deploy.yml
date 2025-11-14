@@ -40,6 +40,13 @@ jobs:
 
       - name: Deploy to EC2 with Docker Compose
         uses: appleboy/ssh-action@master
+        env:
+          REPO: https://github.com/${{ github.repository }}.git
+          DEPLOY_DIR: /home/${{ secrets.EC2_USER }}/ecommerce-backend
+          BRANCH: main
+          PORT: ${{ secrets.PORT }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          MONGO_URL: ${{ secrets.MONGO_URL }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -47,17 +54,13 @@ jobs:
           script: |
             set -euo pipefail
 
-            REPO="https://github.com/${{ github.repository }}.git"
-            DEPLOY_DIR="/home/${{ secrets.EC2_USER }}/ecommerce-backend"
-            BRANCH="main"
-
-            # Ensure git is installed
+            # ensure git
             if ! command -v git >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y git
             fi
 
-            # Clone if missing, otherwise fetch and reset to remote branch
+            # clone or reset repo
             if [ ! -d "$DEPLOY_DIR/.git" ]; then
               rm -rf "$DEPLOY_DIR"
               git clone --depth=1 --branch "$BRANCH" "$REPO" "$DEPLOY_DIR"
@@ -69,23 +72,25 @@ jobs:
 
             cd "$DEPLOY_DIR"
 
-            # Ensure .env exists (MONGO_URL intentionally omitted)
+            # create .env using step env values (no GitHub expressions inside heredoc)
             if [ ! -f .env ]; then
               cat > .env <<EOF
-PORT=${{ secrets.PORT || '5000' }}
-BASE_URL=${{ secrets.BASE_URL || 'http://localhost:5000' }}
+PORT=${PORT:-5000}
+BASE_URL=${BASE_URL:-http://localhost:5000}
+# MONGO_URL intentionally left empty unless provided via secrets
+MONGO_URL=${MONGO_URL:-}
 EOF
-              echo ".env created (no local MONGO_URL)"
+              echo ".env created (MONGO_URL left empty if not provided)"
             fi
 
-            # Pick compose command (plugin or legacy)
+            # select compose command
             if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
               DC="docker compose"
             else
               DC="docker-compose"
             fi
 
-            # Build and restart services
+            # build and restart
             $DC pull --ignore-pull-failures || true
             $DC down --remove-orphans || true
             $DC up -d --build
