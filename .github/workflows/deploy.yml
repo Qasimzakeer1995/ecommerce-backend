@@ -39,14 +39,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy to EC2 with Docker Compose
-        uses: appleboy/ssh-action@master
-        env:
-          REPO: "https://github.com/${{ github.repository }}.git"
-          DEPLOY_DIR: "/home/${{ secrets.EC2_USER }}/ecommerce-backend"
-          BRANCH: "main"
-          PORT: "${{ secrets.PORT }}"
-          BASE_URL: "${{ secrets.BASE_URL }}"
-          MONGO_URL: "${{ secrets.MONGO_URL }}"
+        uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -54,15 +47,27 @@ jobs:
           script: |
             set -euo pipefail
 
-            # ensure git
+            # --- Inject runner-side values as shell variables so set -u won't fail ---
+            REPO="https://github.com/${{ github.repository }}.git"
+            DEPLOY_DIR="/home/${{ secrets.EC2_USER }}/ecommerce-backend"
+            BRANCH="main"
+            PORT="${{ secrets.PORT }}"       # may be empty if not set
+            BASE_URL="${{ secrets.BASE_URL }}" # may be empty if not set
+
+            # ensure git on remote
             if ! command -v git >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y git
             fi
 
+            # ensure docker is installed (if not, install instructions could be added)
+            # ensure deploy dir exists
+            mkdir -p "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR" || exit 1
+
             # clone or reset repo
             if [ ! -d "$DEPLOY_DIR/.git" ]; then
-              rm -rf "$DEPLOY_DIR"
+              rm -rf "$DEPLOY_DIR" || true
               git clone --depth=1 --branch "$BRANCH" "$REPO" "$DEPLOY_DIR"
             else
               cd "$DEPLOY_DIR"
@@ -72,16 +77,13 @@ jobs:
 
             cd "$DEPLOY_DIR"
 
-            # create .env using step env values (no GitHub expressions inside heredoc)
-            if [ ! -f .env ]; then
-              cat > .env <<EOF
+            # create/overwrite .env using values injected above
+            cat > .env <<EOF
 PORT=${PORT:-5000}
 BASE_URL=${BASE_URL:-http://localhost:5000}
-# MONGO_URL intentionally left empty unless provided via secrets
-MONGO_URL=${MONGO_URL:-}
+# Note: MongoDB references intentionally removed
 EOF
-              echo ".env created (MONGO_URL left empty if not provided)"
-            fi
+            echo ".env written (MongoDB removed as requested)"
 
             # select compose command
             if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
