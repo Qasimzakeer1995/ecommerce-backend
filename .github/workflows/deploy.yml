@@ -41,12 +41,12 @@ jobs:
       - name: Deploy to EC2 with Docker Compose
         uses: appleboy/ssh-action@master
         env:
-          REPO: https://github.com/${{ github.repository }}.git
-          DEPLOY_DIR: /home/${{ secrets.EC2_USER }}/ecommerce-backend
-          BRANCH: main
-          PORT: ${{ secrets.PORT }}
-          BASE_URL: ${{ secrets.BASE_URL }}
-          MONGO_URL: ${{ secrets.MONGO_URL }}
+          REPO: "https://github.com/${{ github.repository }}.git"
+          DEPLOY_DIR: "/home/${{ secrets.EC2_USER }}/ecommerce-backend"
+          BRANCH: "main"
+          PORT: "${{ secrets.PORT }}"
+          BASE_URL: "${{ secrets.BASE_URL }}"
+          MONGO_URL: "${{ secrets.MONGO_URL }}"
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
