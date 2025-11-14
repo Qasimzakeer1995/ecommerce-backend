@@ -41,23 +41,23 @@ jobs:
       - name: Deploy to EC2 with Docker Compose
         uses: appleboy/ssh-action@v0.1.6
         env:
-          # Pass secrets/values to the runner and then to the remote shell
+          # runner-side variables (all values quoted to avoid YAML parsing issues)
           REPO: "https://github.com/${{ github.repository }}.git"
           DEPLOY_DIR: "/home/${{ secrets.EC2_USER }}/ecommerce-backend"
           BRANCH: "main"
-          PORT: ${{ secrets.PORT }}
-          BASE_URL: ${{ secrets.BASE_URL }}
+          PORT: "${{ secrets.PORT }}"
+          BASE_URL: "${{ secrets.BASE_URL }}"
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
+          host: "${{ secrets.EC2_HOST }}"
+          username: "${{ secrets.EC2_USER }}"
+          key: "${{ secrets.EC2_KEY }}"
           script: |
             set -euo pipefail
 
-            # Use env variables that were injected by the runner above
+            # ensure required env vars were injected by the runner
             : "${REPO:?REPO is not set}"
             : "${DEPLOY_DIR:?DEPLOY_DIR is not set}"
-            : "${BRANCH:=main}"    # default to main if empty
+            : "${BRANCH:=main}"
             : "${PORT:=5000}"
             : "${BASE_URL:=http://localhost:5000}"
 
@@ -67,7 +67,7 @@ jobs:
               sudo apt-get install -y git
             fi
 
-            # ensure deploy dir exists
+            # ensure deploy dir exists and change to it
             mkdir -p "$DEPLOY_DIR"
             cd "$DEPLOY_DIR" || exit 1
 
@@ -83,11 +83,11 @@ jobs:
 
             cd "$DEPLOY_DIR"
 
-            # create/overwrite .env (Mongo removed)
+            # write/overwrite .env (MongoDB removed)
             cat > .env <<EOF
 PORT=${PORT}
 BASE_URL=${BASE_URL}
-# MongoDB references removed intentionally
+# MongoDB removed intentionally
 EOF
             echo ".env written"
 
