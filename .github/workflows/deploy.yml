@@ -40,6 +40,13 @@ jobs:
 
       - name: Deploy to EC2 with Docker Compose
         uses: appleboy/ssh-action@v0.1.6
+        env:
+          # Pass secrets/values to the runner and then to the remote shell
+          REPO: "https://github.com/${{ github.repository }}.git"
+          DEPLOY_DIR: "/home/${{ secrets.EC2_USER }}/ecommerce-backend"
+          BRANCH: "main"
+          PORT: ${{ secrets.PORT }}
+          BASE_URL: ${{ secrets.BASE_URL }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -47,20 +54,19 @@ jobs:
           script: |
             set -euo pipefail
 
-            # --- Inject runner-side values as shell variables so set -u won't fail ---
-            REPO="https://github.com/${{ github.repository }}.git"
-            DEPLOY_DIR="/home/${{ secrets.EC2_USER }}/ecommerce-backend"
-            BRANCH="main"
-            PORT="${{ secrets.PORT }}"       # may be empty if not set
-            BASE_URL="${{ secrets.BASE_URL }}" # may be empty if not set
+            # Use env variables that were injected by the runner above
+            : "${REPO:?REPO is not set}"
+            : "${DEPLOY_DIR:?DEPLOY_DIR is not set}"
+            : "${BRANCH:=main}"    # default to main if empty
+            : "${PORT:=5000}"
+            : "${BASE_URL:=http://localhost:5000}"
 
-            # ensure git on remote
+            # ensure git is installed on remote
             if ! command -v git >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y git
             fi
 
-            # ensure docker is installed (if not, install instructions could be added)
             # ensure deploy dir exists
             mkdir -p "$DEPLOY_DIR"
             cd "$DEPLOY_DIR" || exit 1
@@ -77,22 +83,22 @@ jobs:
 
             cd "$DEPLOY_DIR"
 
-            # create/overwrite .env using values injected above
+            # create/overwrite .env (Mongo removed)
             cat > .env <<EOF
-PORT=${PORT:-5000}
-BASE_URL=${BASE_URL:-http://localhost:5000}
-# Note: MongoDB references intentionally removed
+PORT=${PORT}
+BASE_URL=${BASE_URL}
+# MongoDB references removed intentionally
 EOF
-            echo ".env written (MongoDB removed as requested)"
+            echo ".env written"
 
-            # select compose command
+            # select docker compose command
             if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
               DC="docker compose"
             else
               DC="docker-compose"
             fi
 
-            # build and restart
+            # build and restart containers
             $DC pull --ignore-pull-failures || true
             $DC down --remove-orphans || true
             $DC up -d --build
