@@ -1,4 +1,5 @@
 const express = require('express');
+require('dotenv').config();
 require('./db/config');
 const User = require('./model/user');
 const Product = require('./model/product');
@@ -138,5 +139,11 @@ function verifyToken(req, resp, next){
   }
 }
 
-app.listen(5000);
+app.get("/", async (req, res) => {
+    res.send("Hello! The app is running 🚀");
+});
+  
+  
+
+app.listen(process.env.PORT);
 
