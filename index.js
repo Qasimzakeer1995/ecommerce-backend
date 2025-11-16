@@ -1,10 +1,10 @@
 const express = require('express');
 require('dotenv').config();
 // require('./db/config');
-const User = require('./model/user');
-const Product = require('./model/product');
-const Jwt = require('jsonwebtoken');
-const jwtKey = 'learning';
+// const User = require('./model/user');
+// const Product = require('./model/product');
+// const Jwt = require('jsonwebtoken');
+// const jwtKey = 'learning';
 
 const cors = require('cors');
 const app = express();

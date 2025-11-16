@@ -11,24 +11,23 @@ services:
       - /app/node_modules
     env_file:
       - .env
-    depends_on:
-      - mongo
+    depends_on: []
 
-  mongo:
-    image: mongo:6
-    container_name: ecommerce_mongo
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    environment:
-      - MONGO_INITDB_DATABASE=e-comm
-    healthcheck:
-      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+#   mongo:
+#     image: mongo:6
+#     container_name: ecommerce_mongo
+#     restart: unless-stopped
+#     ports:
+#       - "27017:27017"
+#     volumes:
+#       - mongo_data:/data/db
+#     environment:
+#       - MONGO_INITDB_DATABASE=e-comm
+#     healthcheck:
+#       test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5
 
-volumes:
-  mongo_data:
+# volumes:
+#   mongo_data:
