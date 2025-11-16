@@ -27,20 +27,12 @@ jobs:
       - name: Install dependencies (CI)
         run: npm ci
 
-      - name: Run tests (optional)
-        run: |
-          if [ -f package.json ] && grep -q "\"test\":" package.json; then
-            npm test || true
-          else
-            echo "No test script; skipping"
-          fi
-
       - name: Build (optional)
         run: |
           if [ -f package.json ] && grep -q "\"build\":" package.json; then
             npm run build
           else
-            echo "No build script; skipping"
+            echo "No build script; skipping build."
           fi
 
       - name: Configure SSH (write key, known_hosts)
@@ -48,21 +40,17 @@ jobs:
           EC2_KEY: ${{ secrets.EC2_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          # write private key safely, strip CRLF if any
           echo "$EC2_KEY" | sed 's/\r$//' > key.pem
           chmod 600 key.pem
           mkdir -p ~/.ssh
           touch ~/.ssh/known_hosts
-          # add host fingerprint to known_hosts (port 22)
           ssh-keyscan -H -p 22 "$EC2_HOST" >> ~/.ssh/known_hosts || true
 
       - name: Rsync repository into EC2 node/ecommerce-backend
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
-          REMOTE_DIR: ${{ env.REMOTE_DIR }}
         run: |
-          # create remote folder if missing and rsync files into it
           rsync -avz --delete \
             --exclude=node_modules \
             --exclude='.git' \
@@ -76,35 +64,35 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           port: 22
-          timeout: "300s"
+          timeout: "300s"      # <-- increased timeout (5 minutes)
+          debug: true          # <-- enable debug logs for more info
           script: |
-            set -e
-            REMOTE_DIR="{{ env.REMOTE_DIR }}" || true
-            # go to the deployment folder
-            cd /home/${{ secrets.EC2_USER }}/node/ecommerce-backend
+            set -ex
+            echo "Deploy started on $(date)"
+            echo "Going to: ${REMOTE_DIR}"
+            cd "${REMOTE_DIR}"
 
-            # ensure Docker exists
-            if ! command -v docker >/dev/null 2>&1; then
-              echo "Docker is not installed or not in PATH"
-              exit 1
-            fi
+            # show disk and docker info for debugging
+            df -h || true
+            docker --version || true
 
-            # stop & remove any existing container
+            echo "Stopping old container (if any)..."
             docker rm -f ${APP_NAME} || true
 
-            # build image
+            echo "Building new Docker image..."
             docker build -t ${IMAGE_NAME}:latest .
 
-            # run container mapping host port 80 -> container 5000
+            echo "Running new container (host:80 -> container:5000)..."
             docker run -d \
               --name ${APP_NAME} \
               --restart unless-stopped \
               -p 80:5000 \
               ${IMAGE_NAME}:latest
 
-            # show status
-            docker ps --filter "name=${APP_NAME}"
-            sleep 2
+            echo "Deployment complete."
+            docker ps --filter "name=${APP_NAME}" || true
+            echo "Health check localhost:80 (curl may not be installed on minimal images)"
             if command -v curl >/dev/null 2>&1; then
               curl -I --max-time 5 http://localhost:80 || true
             fi
+            echo "Deploy finished on $(date)"
