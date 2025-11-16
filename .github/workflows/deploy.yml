@@ -1,4 +1,4 @@
-name: Build and Deploy to EC2
+name: Deploy Node App to EC2
 
 on:
   push:
@@ -7,93 +7,63 @@ on:
       - master
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: 18
 
       - name: Install dependencies
         run: npm install
 
-      - name: Optional audit
-        run: npm audit --audit-level=moderate
-        continue-on-error: true
+      - name: Build (optional)
+        run: |
+          if [ -f package.json ] && grep -q "\"build\":" package.json; then
+            npm run build
+          else
+            echo "No build script, skipping build."
+          fi
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to EC2 with Docker Compose
-        uses: appleboy/ssh-action@v0.1.6
+      - name: Copy files to EC2
         env:
-          # runner-side variables (all values quoted to avoid YAML parsing issues)
-          REPO: "https://github.com/${{ github.repository }}.git"
-          DEPLOY_DIR: "/home/${{ secrets.EC2_USER }}/ecommerce-backend"
-          BRANCH: "main"
-          PORT: "${{ secrets.PORT }}"
-          BASE_URL: "${{ secrets.BASE_URL }}"
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_KEY: ${{ secrets.EC2_KEY }}
+        run: |
+          echo "$EC2_KEY" > key.pem
+          chmod 600 key.pem
+          rsync -avz -e "ssh -i key.pem" --exclude=node_modules ./ $EC2_USER@$EC2_HOST:/home/$EC2_USER/nodeapp/
+
+      - name: Run app on EC2 (PM2)
+        uses: appleboy/ssh-action@v0.1.6
         with:
-          host: "${{ secrets.EC2_HOST }}"
-          username: "${{ secrets.EC2_USER }}"
-          key: "${{ secrets.EC2_KEY }}"
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          port: 22
           script: |
-            set -euo pipefail
+            cd /home/${{ secrets.EC2_USER }}/nodeapp
 
-            # ensure required env vars were injected by the runner
-            : "${REPO:?REPO is not set}"
-            : "${DEPLOY_DIR:?DEPLOY_DIR is not set}"
-            : "${BRANCH:=main}"
-            : "${PORT:=5000}"
-            : "${BASE_URL:=http://localhost:5000}"
+            # install dependencies
+            npm install --production
 
-            # ensure git is installed on remote
-            if ! command -v git >/dev/null 2>&1; then
-              sudo apt-get update -y
-              sudo apt-get install -y git
+            # install pm2 if not exists
+            if ! command -v pm2 >/dev/null 2>&1; then
+              sudo npm install -g pm2
             fi
 
-            # ensure deploy dir exists and change to it
-            mkdir -p "$DEPLOY_DIR"
-            cd "$DEPLOY_DIR" || exit 1
+            # start or restart the app on port 5000
+            PM2_APP_NAME="nodeapp"
 
-            # clone or reset repo
-            if [ ! -d "$DEPLOY_DIR/.git" ]; then
-              rm -rf "$DEPLOY_DIR" || true
-              git clone --depth=1 --branch "$BRANCH" "$REPO" "$DEPLOY_DIR"
-            else
-              cd "$DEPLOY_DIR"
-              git fetch origin "$BRANCH"
-              git reset --hard "origin/$BRANCH"
-            fi
+            # export PORT=5000 for app
+            export PORT=5000
 
-            cd "$DEPLOY_DIR"
+            pm2 startOrReload ecosystem.config.js || pm2 start npm --name "$PM2_APP_NAME" -- start
 
-            # select docker compose command
-            if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-              DC="docker compose"
-            else
-              DC="docker-compose"
-            fi
-
-            # build and restart containers
-            $DC pull --ignore-pull-failures || true
-            $DC down --remove-orphans || true
-            $DC up -d --build
-
-            echo "✅ Deployed via $DC"
-            $DC ps
+            pm2 save
