@@ -83,8 +83,6 @@ jobs:
 
             cd "$DEPLOY_DIR"
 
-           
-
             # select docker compose command
             if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
               DC="docker compose"
