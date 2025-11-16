@@ -19,12 +19,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node (for build/test steps)
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install dependencies (CI)
+      - name: Install dependencies
         run: npm ci
 
       - name: Build (optional)
@@ -35,7 +35,7 @@ jobs:
             echo "No build script; skipping build."
           fi
 
-      - name: Configure SSH (write key, known_hosts)
+      - name: Configure SSH
         env:
           EC2_KEY: ${{ secrets.EC2_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
@@ -46,7 +46,7 @@ jobs:
           touch ~/.ssh/known_hosts
           ssh-keyscan -H -p 22 "$EC2_HOST" >> ~/.ssh/known_hosts || true
 
-      - name: Rsync repository into EC2 node/ecommerce-backend
+      - name: Rsync repository into EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -57,32 +57,40 @@ jobs:
             -e "ssh -i key.pem -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
             ./ ${EC2_USER}@${EC2_HOST}:${REMOTE_DIR}/
 
-      - name: Build & run Docker on EC2 (host:80 -> container:5000)
+      - name: Build & Run Docker on EC2
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           port: 22
-          timeout: "300s"      # <-- increased timeout (5 minutes)
-          debug: true          # <-- enable debug logs for more info
+          timeout: "300s"
+          debug: true
+
+          # Pass environment variables into SSH session
+          envs: APP_NAME,REMOTE_DIR,IMAGE_NAME
+
           script: |
             set -ex
             echo "Deploy started on $(date)"
-            echo "Going to: ${REMOTE_DIR}"
+
+            # These echo statements will confirm the values of the env vars on EC2
+            echo "APP_NAME=${APP_NAME}"
+            echo "REMOTE_DIR=${REMOTE_DIR}"
+            echo "IMAGE_NAME=${IMAGE_NAME}"
+
             cd "${REMOTE_DIR}"
 
-            # show disk and docker info for debugging
             df -h || true
             docker --version || true
 
-            echo "Stopping old container (if any)..."
+            echo "Stopping old container..."
             docker rm -f ${APP_NAME} || true
 
             echo "Building new Docker image..."
             docker build -t ${IMAGE_NAME}:latest .
 
-            echo "Running new container (host:80 -> container:5000)..."
+            echo "Running container..."
             docker run -d \
               --name ${APP_NAME} \
               --restart unless-stopped \
@@ -91,8 +99,3 @@ jobs:
 
             echo "Deployment complete."
             docker ps --filter "name=${APP_NAME}" || true
-            echo "Health check localhost:80 (curl may not be installed on minimal images)"
-            if command -v curl >/dev/null 2>&1; then
-              curl -I --max-time 5 http://localhost:80 || true
-            fi
-            echo "Deploy finished on $(date)"
