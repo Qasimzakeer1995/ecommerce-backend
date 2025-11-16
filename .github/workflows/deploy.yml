@@ -1,69 +1,110 @@
-name: Deploy Node App to EC2
+name: Deploy to EC2 via Docker (existing node/ecommerce-backend)
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ "main" ]
+
+env:
+  APP_NAME: nodeapp
+  REMOTE_DIR: /home/${{ secrets.EC2_USER }}/node/ecommerce-backend
+  IMAGE_NAME: ecommerce-backend-image
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node (for build/test steps)
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install dependencies (CI)
+        run: npm ci
+
+      - name: Run tests (optional)
+        run: |
+          if [ -f package.json ] && grep -q "\"test\":" package.json; then
+            npm test || true
+          else
+            echo "No test script; skipping"
+          fi
 
       - name: Build (optional)
         run: |
           if [ -f package.json ] && grep -q "\"build\":" package.json; then
             npm run build
           else
-            echo "No build script, skipping build."
+            echo "No build script; skipping"
           fi
 
-      - name: Copy files to EC2
+      - name: Configure SSH (write key, known_hosts)
+        env:
+          EC2_KEY: ${{ secrets.EC2_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          # write private key safely, strip CRLF if any
+          echo "$EC2_KEY" | sed 's/\r$//' > key.pem
+          chmod 600 key.pem
+          mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
+          # add host fingerprint to known_hosts (port 22)
+          ssh-keyscan -H -p 22 "$EC2_HOST" >> ~/.ssh/known_hosts || true
+
+      - name: Rsync repository into EC2 node/ecommerce-backend
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_KEY: ${{ secrets.EC2_KEY }}
+          REMOTE_DIR: ${{ env.REMOTE_DIR }}
         run: |
-          echo "$EC2_KEY" > key.pem
-          chmod 600 key.pem
-          rsync -avz -e "ssh -i key.pem" --exclude=node_modules ./ $EC2_USER@$EC2_HOST:/home/$EC2_USER/nodeapp/
+          # create remote folder if missing and rsync files into it
+          rsync -avz --delete \
+            --exclude=node_modules \
+            --exclude='.git' \
+            -e "ssh -i key.pem -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
+            ./ ${EC2_USER}@${EC2_HOST}:${REMOTE_DIR}/
 
-      - name: Run app on EC2 (PM2)
+      - name: Build & run Docker on EC2 (host:80 -> container:5000)
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           port: 22
+          timeout: 300000
           script: |
-            cd /home/${{ secrets.EC2_USER }}/nodeapp
+            set -e
+            REMOTE_DIR="{{ env.REMOTE_DIR }}" || true
+            # go to the deployment folder
+            cd /home/${{ secrets.EC2_USER }}/node/ecommerce-backend
 
-            # install dependencies
-            npm install --production
-
-            # install pm2 if not exists
-            if ! command -v pm2 >/dev/null 2>&1; then
-              sudo npm install -g pm2
+            # ensure Docker exists
+            if ! command -v docker >/dev/null 2>&1; then
+              echo "Docker is not installed or not in PATH"
+              exit 1
             fi
 
-            # start or restart the app on port 5000
-            PM2_APP_NAME="nodeapp"
+            # stop & remove any existing container
+            docker rm -f ${APP_NAME} || true
 
-            # export PORT=5000 for app
-            export PORT=5000
+            # build image
+            docker build -t ${IMAGE_NAME}:latest .
 
-            pm2 startOrReload ecosystem.config.js || pm2 start npm --name "$PM2_APP_NAME" -- start
+            # run container mapping host port 80 -> container 5000
+            docker run -d \
+              --name ${APP_NAME} \
+              --restart unless-stopped \
+              -p 80:5000 \
+              ${IMAGE_NAME}:latest
 
-            pm2 save
+            # show status
+            docker ps --filter "name=${APP_NAME}"
+            sleep 2
+            if command -v curl >/dev/null 2>&1; then
+              curl -I --max-time 5 http://localhost:80 || true
+            fi
