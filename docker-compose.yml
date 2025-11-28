@@ -1,4 +1,4 @@
-# version: '3.8'
+version: '3.8'
 
 services:
   app:
@@ -7,28 +7,28 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - .:/app
-      - /app/node_modules
+      - .:/app:cached        # mount project code for hot reload
+      - /app/node_modules    # keep container node_modules separate
     env_file:
       - .env
-    # depends_on:
-    #   - mongo
+    depends_on:
+      - mongo
 
-#   mongo:
-#     image: mongo:6
-#     container_name: ecommerce_mongo
-#     restart: unless-stopped
-#     ports:
-#       - "27017:27017"
-#     volumes:
-#       - mongo_data:/data/db
-#     environment:
-#       - MONGO_INITDB_DATABASE=e-comm
-#     healthcheck:
-#       test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
-#       interval: 10s
-#       timeout: 5s
-#       retries: 5
+  mongo:
+    image: mongo:6
+    container_name: ecommerce_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=e-comm
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-# volumes:
-#   mongo_data:
+volumes:
+  mongo_data:

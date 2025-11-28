@@ -5,7 +5,11 @@ const productSchema = new mongoose.Schema({
     price: Number,
     userId: String,
     category:String,
-    company:String
+    company:String,
+    image: {           
+        type: String,
+        required: false // optional, set true if image must be uploaded
+    }
 });
 
 module.exports = mongoose.model('Product', productSchema, 'products');
